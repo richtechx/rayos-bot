@@ -1,5 +1,3 @@
-Para agregar el ruso (ru) al bot, simplemente sumamos un nuevo diccionario de traducciones con todos sus textos al idioma ruso y lo incorporamos al sistema junto con el español, inglés y ucraniano.
-Aquí tienes el código completo y listo para copiar en tu archivo bot.py de GitHub:
 import os
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
