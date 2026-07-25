@@ -1,5 +1,7 @@
 import os
 import sqlite3
+import threading
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, 
@@ -7,6 +9,24 @@ from telegram.ext import (
     CommandHandler, 
     CallbackQueryHandler
 )
+
+# --- SERVIDOR WEB PARA EVITAR QUE RENDER SE DUERMA ---
+app_web = Flask('')
+
+@app_web.route('/')
+def home():
+    return "¡El bot de Rayos está activo y despierto! ⚡"
+
+def run_web():
+    # Render asigna un puerto mediante la variable de entorno PORT, si no hay usa el 8080
+    port = int(os.environ.get("PORT", 8080))
+    app_web.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = threading.Thread(target=run_web)
+    t.daemon = True
+    t.start()
+# ----------------------------------------------------
 
 # Diccionario de traducciones (Español, Inglés, Ucraniano y Ruso)
 TEXTOS = {
@@ -18,7 +38,7 @@ TEXTOS = {
         'ya_voto': "⚠️ **¡Ya has votado en esta batalla!**\nNo puedes acumular rayos dos veces en la misma publicación.\n⚡ Tu saldo actual es de: **{saldo} Rayos**",
         'voto_exito': "✅ ¡Voto registrado con éxito!\n🎁 Has ganado **+1 ⚡ Rayo** por participar.\n⚡ Tu nuevo saldo es de: **{saldo} Rayos**",
         'perfil_txt': "👤 **Perfil:** @{username}\n🆔 ID: `{user_id}`\n\n⚡ **Saldo Actual:** {rayos} Rayos",
-        'tienda_txt': "🏆 **Tienda de Beneficios (Canjea tus ⚡):**\n\n * ✨ Votos adicionales\n * 🏆 Paso a la siguiente ronda\n * 👑 Acceso de administrador temporal\n * 📢 Publicidad en canales\n * 🎁 Sorteos exclusivos",
+        'tienda_txt': "🏆 **Tienda de Beneficios (Canjea tus ⚡):**\n\n * ✨ Votos adicionales\n * 🏆 Paso a la siguiente ronda\n * 👑 Acceso de administrador temporal\n * 📢 Publicidad в canales\n * 🎁 Sorteos exclusivos",
         'comprar_txt': "🛒 **Comprar Rayos con Stars:** Próximamente disponible."
     },
     'en': {
@@ -64,7 +84,7 @@ def obtener_idioma(update: Update):
             return lang
     return 'es'
 
-# 1. Inicializar la Base de Datos Local
+# Inicializar Base de Datos
 def init_db():
     conn = sqlite3.connect('rayos_bot.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -87,7 +107,6 @@ def init_db():
 
 init_db()
 
-# 2. Función para obtener o registrar usuarios automáticamente
 def obtener_o_crear_usuario(user_id, username):
     conn = sqlite3.connect('rayos_bot.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -102,7 +121,6 @@ def obtener_o_crear_usuario(user_id, username):
     conn.close()
     return rayos
 
-# 3. Comando /start (Multilenguaje con soporte Ruso)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     args = context.args 
@@ -145,7 +163,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Menú normal /start
     keyboard = [
         [InlineKeyboardButton(t['btn_perfil'], callback_data='perfil')],
         [InlineKeyboardButton(t['btn_comprar'], callback_data='comprar')],
@@ -157,7 +174,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup, parse_mode='Markdown'
     )
 
-# 4. Ver Perfil
 async def perfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     lang = obtener_idioma(update)
@@ -172,7 +188,6 @@ async def perfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(texto, parse_mode='Markdown')
 
-# 5. Manejador de Botones del Menú
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -186,7 +201,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == 'tienda':
         await query.message.edit_text(t['tienda_txt'], parse_mode='Markdown')
 
-# 6. Comando Administrador
 async def premiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = context.args
@@ -225,8 +239,11 @@ async def premiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al procesar: {e}")
 
-# 7. Configuración principal
 def main():
+    # 1. Arrancamos el servidor web en segundo plano para que Render no se duerma
+    keep_alive()
+    
+    # 2. Arrancamos el Bot de Telegram de manera normal
     TOKEN = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(TOKEN).build()
     
@@ -239,4 +256,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
