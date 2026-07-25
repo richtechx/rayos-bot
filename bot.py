@@ -5,8 +5,7 @@ from telegram.ext import (
     ApplicationBuilder, 
     ContextTypes, 
     CommandHandler, 
-    CallbackQueryHandler, 
-    MessageReactionHandler
+    CallbackQueryHandler
 )
 
 # 1. Inicializar la Base de Datos Local
@@ -40,9 +39,35 @@ def obtener_o_crear_usuario(user_id, username):
     conn.close()
     return rayos
 
-# 3. Comando /start
+# 3. Comando /start (Procesa automáticamente los votos desde el canal)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    args = context.args 
+    
+    if args and args[0] == 'votar':
+        conn = sqlite3.connect('rayos_bot.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT rayos, username FROM usuarios WHERE user_id = ?', (user.id,))
+        db_user = cursor.fetchone()
+        
+        if db_user:
+            nuevo_saldo = db_user[0] + 1
+            cursor.execute('UPDATE usuarios SET rayos = ? WHERE user_id = ?', (nuevo_saldo, user.id))
+        else:
+            nuevo_saldo = 11
+            cursor.execute('INSERT INTO usuarios (user_id, username, rayos) VALUES (?, ?, ?)', (user.id, user.username or user.first_name, nuevo_saldo))
+        
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(
+            f"✅ ¡Voto registrado con éxito!\n"
+            f"🎁 Has ganado **+1 ⚡ Rayo** por participar.\n"
+            f"⚡ Tu nuevo saldo es de: **{nuevo_saldo} Rayos**",
+            parse_mode='Markdown'
+        )
+        return
+
     rayos = obtener_o_crear_usuario(user.id, user.username or user.first_name)
     keyboard = [
         [InlineKeyboardButton("⚡ Ver Mi Perfil", callback_data='perfil')],
@@ -52,7 +77,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         f"¡Bienvenido, {user.first_name}! 💖\n\n"
-        f"En nuestra batalla de fotos, acumula **⚡ Rayos** reaccionando en el canal, ganando concursos o sorteos.\n"
+        f"En nuestra batalla de fotos, acumula **⚡ Rayos** votando en el canal, ganando concursos o sorteos.\n"
         f"Tienes un saldo inicial de **{rayos} ⚡ Rayos**.",
         reply_markup=reply_markup, parse_mode='Markdown'
     )
@@ -91,7 +116,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-# 6. Comando Administrador para premiar manualmente (Ganadores de batallas o sorteos)
+# 6. Comando Administrador para premiar manualmente
 async def premiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = context.args
@@ -130,31 +155,7 @@ async def premiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al procesar: {e}")
 
-# 7. AUTOMÁTICO: Dar 1 Rayo cuando un usuario reacciona (vota) en el canal
-async def track_reactions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message_reaction:
-        user = update.message_reaction.user
-        if user:
-            user_id = user.id
-            username = user.username or user.first_name
-            
-            # Si añade una reacción nueva en el canal
-            if update.message_reaction.new_reaction:
-                conn = sqlite3.connect('rayos_bot.db')
-                cursor = conn.cursor()
-                cursor.execute('SELECT rayos FROM usuarios WHERE user_id = ?', (user_id,))
-                db_user = cursor.fetchone()
-                
-                if db_user:
-                    nuevo_saldo = db_user[0] + 1
-                    cursor.execute('UPDATE usuarios SET rayos = ? WHERE user_id = ?', (nuevo_saldo, user_id))
-                else:
-                    cursor.execute('INSERT INTO usuarios (user_id, username, rayos) VALUES (?, ?, ?)', (user_id, username, 11))
-                
-                conn.commit()
-                conn.close()
-
-# 8. Configuración principal
+# 7. Configuración principal
 def main():
     TOKEN = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(TOKEN).build()
@@ -163,7 +164,6 @@ def main():
     app.add_handler(CommandHandler("perfil", perfil))
     app.add_handler(CommandHandler("premiar", premiar))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageReactionHandler(track_reactions)) # Escucha las reacciones del canal automáticamente
     
     app.run_polling()
 
