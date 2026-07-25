@@ -73,7 +73,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text("🏆 **Tienda:** Votos extra, pases de ronda y más.", parse_mode='Markdown')
 
 def main():
-    TOKEN = os.getenv("8754572091:AAFINso9ZAPP6oH8vjuU7MWIHZsrI_cHjkU")
+    TOKEN = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("perfil", perfil))
