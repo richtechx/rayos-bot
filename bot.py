@@ -12,11 +12,20 @@ from telegram.ext import (
 def init_db():
     conn = sqlite3.connect('rayos_bot.db')
     cursor = conn.cursor()
+    # Tabla de usuarios y sus rayos
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             user_id INTEGER PRIMARY KEY,
             username TEXT,
             rayos INTEGER DEFAULT 10
+        )
+    ''')
+    # Tabla para registrar automáticamente cada voto por identificador de batalla
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS votos_historial (
+            user_id INTEGER,
+            batalla_id TEXT,
+            PRIMARY KEY (user_id, batalla_id)
         )
     ''')
     conn.commit()
@@ -39,14 +48,35 @@ def obtener_o_crear_usuario(user_id, username):
     conn.close()
     return rayos
 
-# 3. Comando /start (Procesa automáticamente los votos desde el canal)
+# 3. Comando /start (Procesa y valida cualquier batalla automáticamente)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     args = context.args 
     
-    if args and args[0] == 'votar':
+    # Si el enlace empieza con 'votar_', el sistema procesa el voto para esa batalla específica
+    if args and args[0].startswith('votar_'):
+        batalla_id = args[0] # Captura dinámicamente el identificador que pongas en PostBot
+        
         conn = sqlite3.connect('rayos_bot.db')
         cursor = conn.cursor()
+        
+        # Revisa si el usuario ya votó en esta batalla específica
+        cursor.execute('SELECT * FROM votos_historial WHERE user_id = ? AND batalla_id = ?', (user.id, batalla_id))
+        ya_voto = cursor.fetchone()
+        
+        if ya_voto:
+            conn.close()
+            await update.message.reply_text(
+                "⚠️ **¡Ya has votado en esta batalla!**\n"
+                "No puedes acumular rayos dos veces en la misma publicación.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Guarda el voto en la base de datos para bloquear futuros intentos en esta misma batalla
+        cursor.execute('INSERT INTO votos_historial (user_id, batalla_id) VALUES (?, ?)', (user.id, batalla_id))
+        
+        # Suma el rayo al usuario
         cursor.execute('SELECT rayos, username FROM usuarios WHERE user_id = ?', (user.id,))
         db_user = cursor.fetchone()
         
@@ -68,6 +98,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Comportamiento normal del /start (menú principal)
     rayos = obtener_o_crear_usuario(user.id, user.username or user.first_name)
     keyboard = [
         [InlineKeyboardButton("⚡ Ver Mi Perfil", callback_data='perfil')],
