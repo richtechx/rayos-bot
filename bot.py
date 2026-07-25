@@ -10,9 +10,8 @@ from telegram.ext import (
 
 # 1. Inicializar la Base de Datos Local
 def init_db():
-    conn = sqlite3.connect('rayos_bot.db')
+    conn = sqlite3.connect('rayos_bot.db', check_same_thread=False)
     cursor = conn.cursor()
-    # Tabla de usuarios y sus rayos
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             user_id INTEGER PRIMARY KEY,
@@ -20,7 +19,6 @@ def init_db():
             rayos INTEGER DEFAULT 10
         )
     ''')
-    # Tabla para registrar automáticamente cada voto por identificador de batalla
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS votos_historial (
             user_id INTEGER,
@@ -35,7 +33,7 @@ init_db()
 
 # 2. Función para obtener o registrar usuarios automáticamente
 def obtener_o_crear_usuario(user_id, username):
-    conn = sqlite3.connect('rayos_bot.db')
+    conn = sqlite3.connect('rayos_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('SELECT rayos FROM usuarios WHERE user_id = ?', (user_id,))
     user = cursor.fetchone()
@@ -48,20 +46,19 @@ def obtener_o_crear_usuario(user_id, username):
     conn.close()
     return rayos
 
-# 3. Comando /start (Procesa y valida cualquier batalla automáticamente)
+# 3. Comando /start (Procesa y valida cualquier batalla automáticamente con commit seguro)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     args = context.args 
     
-    # Si el enlace empieza con 'votar_', el sistema procesa el voto para esa batalla específica
     if args and args[0].startswith('votar_'):
-        batalla_id = args[0] # Captura dinámicamente el identificador que pongas en PostBot
+        batalla_id = args[0]
         
-        conn = sqlite3.connect('rayos_bot.db')
+        conn = sqlite3.connect('rayos_bot.db', check_same_thread=False)
         cursor = conn.cursor()
         
-        # Revisa si el usuario ya votó en esta batalla específica
-        cursor.execute('SELECT * FROM votos_historial WHERE user_id = ? AND batalla_id = ?', (user.id, batalla_id))
+        # Verificar si ya votó en esta batalla específica
+        cursor.execute('SELECT 1 FROM votos_historial WHERE user_id = ? AND batalla_id = ?', (user.id, batalla_id))
         ya_voto = cursor.fetchone()
         
         if ya_voto:
@@ -73,11 +70,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         
-        # Guarda el voto en la base de datos para bloquear futuros intentos en esta misma batalla
-        cursor.execute('INSERT INTO votos_historial (user_id, batalla_id) VALUES (?, ?)', (user.id, batalla_id))
-        
-        # Suma el rayo al usuario
-        cursor.execute('SELECT rayos, username FROM usuarios WHERE user_id = ?', (user.id,))
+        # Asegurarnos de que el usuario exista antes de sumar
+        cursor.execute('SELECT rayos FROM usuarios WHERE user_id = ?', (user.id,))
         db_user = cursor.fetchone()
         
         if db_user:
@@ -86,6 +80,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             nuevo_saldo = 11
             cursor.execute('INSERT INTO usuarios (user_id, username, rayos) VALUES (?, ?, ?)', (user.id, user.username or user.first_name, nuevo_saldo))
+        
+        # Registrar el voto en el historial de esta batalla
+        cursor.execute('INSERT INTO votos_historial (user_id, batalla_id) VALUES (?, ?)', (user.id, batalla_id))
         
         conn.commit()
         conn.close()
@@ -98,7 +95,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Comportamiento normal del /start (menú principal)
+    # Menú normal /start
     rayos = obtener_o_crear_usuario(user.id, user.username or user.first_name)
     keyboard = [
         [InlineKeyboardButton("⚡ Ver Mi Perfil", callback_data='perfil')],
@@ -158,7 +155,7 @@ async def premiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_user_id = int(args[0])
         cantidad = int(args[1])
 
-        conn = sqlite3.connect('rayos_bot.db')
+        conn = sqlite3.connect('rayos_bot.db', check_same_thread=False)
         cursor = conn.cursor()
         cursor.execute('SELECT rayos, username FROM usuarios WHERE user_id = ?', (target_user_id,))
         user = cursor.fetchone()
