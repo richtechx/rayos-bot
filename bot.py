@@ -18,7 +18,6 @@ def home():
     return "¡El bot de Rayos está activo y despierto! ⚡"
 
 def run_web():
-    # Render asigna un puerto mediante la variable de entorno PORT, si no hay usa el 8080
     port = int(os.environ.get("PORT", 8080))
     app_web.run(host='0.0.0.0', port=port)
 
@@ -38,7 +37,7 @@ TEXTOS = {
         'ya_voto': "⚠️ **¡Ya has votado en esta batalla!**\nNo puedes acumular rayos dos veces en la misma publicación.\n⚡ Tu saldo actual es de: **{saldo} Rayos**",
         'voto_exito': "✅ ¡Voto registrado con éxito!\n🎁 Has ganado **+1 ⚡ Rayo** por participar.\n⚡ Tu nuevo saldo es de: **{saldo} Rayos**",
         'perfil_txt': "👤 **Perfil:** @{username}\n🆔 ID: `{user_id}`\n\n⚡ **Saldo Actual:** {rayos} Rayos",
-        'tienda_txt': "🏆 **Tienda de Beneficios (Canjea tus ⚡):**\n\n * ✨ Votos adicionales\n * 🏆 Paso a la siguiente ronda\n * 👑 Acceso de administrador temporal\n * 📢 Publicidad в canales\n * 🎁 Sorteos exclusivos",
+        'tienda_txt': "🏆 **Tienda de Beneficios (Canjea tus ⚡):**\n\n * ✨ Votos adicionales\n * 🏆 Paso a la siguiente ronda\n * 👑 Acceso de administrador temporal\n * 📢 Publicidad en canales\n * 🎁 Sorteos exclusivos",
         'comprar_txt': "🛒 **Comprar Rayos con Stars:** Próximamente disponible."
     },
     'en': {
@@ -239,17 +238,47 @@ async def premiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al procesar: {e}")
 
+async def consultar_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        args = context.args
+        if not args:
+            await update.message.reply_text("⚠️ Uso correcto: `/saldo @usuario` o `/saldo [ID_usuario]`", parse_mode='Markdown')
+            return
+        
+        busqueda = args[0]
+        
+        conn = sqlite3.connect('rayos_bot.db', check_same_thread=False)
+        cursor = conn.cursor()
+        
+        if busqueda.isdigit():
+            cursor.execute('SELECT user_id, username, rayos FROM usuarios WHERE user_id = ?', (int(busqueda),))
+        else:
+            username_limpio = busqueda.lstrip('@')
+            cursor.execute('SELECT user_id, username, rayos FROM usuarios WHERE username LIKE ?', (username_limpio,))
+            
+        usuario = cursor.fetchone()
+        conn.close()
+        
+        if usuario:
+            user_id, username, rayos = usuario
+            nombre_mostrar = f"@{username}" if username else f"ID: {user_id}"
+            await update.message.reply_text(f"👤 **Usuario:** {nombre_mostrar}\n🆔 ID: `{user_id}`\n⚡ **Saldo:** {rayos} Rayos", parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ No se encontró ningún usuario con ese nombre o ID en la base de datos.")
+            
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error al consultar: {e}")
+
 def main():
-    # 1. Arrancamos el servidor web en segundo plano para que Render no se duerma
     keep_alive()
     
-    # 2. Arrancamos el Bot de Telegram de manera normal
     TOKEN = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("perfil", perfil))
     app.add_handler(CommandHandler("premiar", premiar))
+    app.add_handler(CommandHandler("saldo", consultar_saldo))
     app.add_handler(CallbackQueryHandler(button_handler))
     
     app.run_polling()
